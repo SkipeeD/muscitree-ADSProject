@@ -37,6 +37,7 @@ const RAW_RUNTIME_STATE =
           ["eslint", "virtual:5f09aa0220183204eebeb87be4c12a625603c60b61d22e06ef7295154e1932284062144c8e6d0d2b0d3eb0e784c3c8b9d3ea8f1c35cd73c932972eb3f6963371#npm:10.4.0"],\
           ["eslint-plugin-react-hooks", "virtual:5f09aa0220183204eebeb87be4c12a625603c60b61d22e06ef7295154e1932284062144c8e6d0d2b0d3eb0e784c3c8b9d3ea8f1c35cd73c932972eb3f6963371#npm:7.1.1"],\
           ["eslint-plugin-react-refresh", "virtual:5f09aa0220183204eebeb87be4c12a625603c60b61d22e06ef7295154e1932284062144c8e6d0d2b0d3eb0e784c3c8b9d3ea8f1c35cd73c932972eb3f6963371#npm:0.5.2"],\
+          ["geist", "virtual:5f09aa0220183204eebeb87be4c12a625603c60b61d22e06ef7295154e1932284062144c8e6d0d2b0d3eb0e784c3c8b9d3ea8f1c35cd73c932972eb3f6963371#npm:1.7.1"],\
           ["globals", "npm:17.6.0"],\
           ["musictree", "workspace:."],\
           ["postcss", "npm:8.5.15"],\
@@ -1513,6 +1514,28 @@ const RAW_RUNTIME_STATE =
         "linkType": "HARD"\
       }]\
     ]],\
+    ["geist", [\
+      ["npm:1.7.1", {\
+        "packageLocation": "../../.yarn/berry/cache/geist-npm-1.7.1-6c0312833f-10c0.zip/node_modules/geist/",\
+        "packageDependencies": [\
+          ["geist", "npm:1.7.1"]\
+        ],\
+        "linkType": "SOFT"\
+      }],\
+      ["virtual:5f09aa0220183204eebeb87be4c12a625603c60b61d22e06ef7295154e1932284062144c8e6d0d2b0d3eb0e784c3c8b9d3ea8f1c35cd73c932972eb3f6963371#npm:1.7.1", {\
+        "packageLocation": "./.yarn/__virtual__/geist-virtual-a9371c545b/3/.yarn/berry/cache/geist-npm-1.7.1-6c0312833f-10c0.zip/node_modules/geist/",\
+        "packageDependencies": [\
+          ["@types/next", null],\
+          ["geist", "virtual:5f09aa0220183204eebeb87be4c12a625603c60b61d22e06ef7295154e1932284062144c8e6d0d2b0d3eb0e784c3c8b9d3ea8f1c35cd73c932972eb3f6963371#npm:1.7.1"],\
+          ["next", null]\
+        ],\
+        "packagePeers": [\
+          "@types/next",\
+          "next"\
+        ],\
+        "linkType": "HARD"\
+      }]\
+    ]],\
     ["gensync", [\
       ["npm:1.0.0-beta.2", {\
         "packageLocation": "../../.yarn/berry/cache/gensync-npm-1.0.0-beta.2-224666d72f-10c0.zip/node_modules/gensync/",\
@@ -1907,6 +1930,7 @@ const RAW_RUNTIME_STATE =
           ["eslint", "virtual:5f09aa0220183204eebeb87be4c12a625603c60b61d22e06ef7295154e1932284062144c8e6d0d2b0d3eb0e784c3c8b9d3ea8f1c35cd73c932972eb3f6963371#npm:10.4.0"],\
           ["eslint-plugin-react-hooks", "virtual:5f09aa0220183204eebeb87be4c12a625603c60b61d22e06ef7295154e1932284062144c8e6d0d2b0d3eb0e784c3c8b9d3ea8f1c35cd73c932972eb3f6963371#npm:7.1.1"],\
           ["eslint-plugin-react-refresh", "virtual:5f09aa0220183204eebeb87be4c12a625603c60b61d22e06ef7295154e1932284062144c8e6d0d2b0d3eb0e784c3c8b9d3ea8f1c35cd73c932972eb3f6963371#npm:0.5.2"],\
+          ["geist", "virtual:5f09aa0220183204eebeb87be4c12a625603c60b61d22e06ef7295154e1932284062144c8e6d0d2b0d3eb0e784c3c8b9d3ea8f1c35cd73c932972eb3f6963371#npm:1.7.1"],\
           ["globals", "npm:17.6.0"],\
           ["musictree", "workspace:."],\
           ["postcss", "npm:8.5.15"],\

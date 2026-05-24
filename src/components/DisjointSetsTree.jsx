@@ -1,3 +1,5 @@
+const FONT_SANS = "'Geist', system-ui, sans-serif"
+const FONT_MONO = "'JetBrains Mono', 'SF Mono', ui-monospace, monospace"
 
 function buildChildren(ds) {
     const children = {}
@@ -9,69 +11,125 @@ function buildChildren(ds) {
     return children
 }
 
-function TreeNode({ name, children, x, y, rank, isRoot }) {
-    const childCount = children[name]?.length || 0
-    const childSpacing = 80
+// coverMap and colorMap are passed down so every level has access
+function TreeNode({ name, children, x, y, rank, isRoot, color, coverMap, colorMap }) {
+    const childCount   = children[name]?.length || 0
+    const childSpacing = 110
+    const childY       = y + 110
+    const R            = 28
+    const cover        = coverMap?.[name] ?? null
 
     return (
         <g>
-            {/* Draw lines to children */}
+            {/* Lines to children */}
             {(children[name] || []).map((child, i) => {
-                const childX = x + (i - (childCount - 1) / 2) * childSpacing
-                const childY = y + 80
+                const cx = x + (i - (childCount - 1) / 2) * childSpacing
                 return (
                     <line
                         key={child}
-                        x1={x} y1={y}
-                        x2={childX} y2={childY}
-                        stroke="#374151"
+                        x1={x}  y1={y + R}
+                        x2={cx} y2={childY - R}
+                        stroke="var(--c-border)"
                         strokeWidth="1.5"
                     />
                 )
             })}
 
-            {/* Node circle */}
+            {/* Clip circle for art */}
+            <clipPath id={`fc-clip-${name.replace(/[\s'",]/g, '_')}`}>
+                <circle cx={x} cy={y} r={R - 2} />
+            </clipPath>
+
+            {/* Node base */}
             <circle
-                cx={x} cy={y} r={22}
-                fill={isRoot ? '#22c55e' : '#1f2937'}
-                stroke={isRoot ? '#4ade80' : '#374151'}
-                strokeWidth="2"
+                cx={x} cy={y} r={R}
+                fill={isRoot && color
+                    ? color.replace(')', ' / 0.18)')
+                    : 'var(--c-panel)'}
+                stroke={isRoot && color ? color : 'var(--c-border)'}
+                strokeWidth={isRoot ? 2 : 1.5}
             />
 
-            {/* Song name */}
+            {/* Album art */}
+            {cover && (
+                <image
+                    href={cover}
+                    x={x - R + 2} y={y - R + 2}
+                    width={(R - 2) * 2} height={(R - 2) * 2}
+                    clipPath={`url(#fc-clip-${name.replace(/[\s'",]/g, '_')})`}
+                    preserveAspectRatio="xMidYMid slice"
+                    style={{ opacity: 0.88 }}
+                />
+            )}
+
+            {/* Initial letter when no art */}
+            {!cover && (
+                <text
+                    x={x} y={y + 6}
+                    textAnchor="middle"
+                    fill={isRoot && color ? color : 'var(--c-muted)'}
+                    fontSize="15"
+                    fontWeight="600"
+                    fontFamily={FONT_SANS}
+                >
+                    {name[0]?.toUpperCase()}
+                </text>
+            )}
+
+            {/* Root color ring on top of art */}
+            {isRoot && color && (
+                <circle
+                    cx={x} cy={y} r={R}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth="2"
+                />
+            )}
+
+            {/* Rank badge — bottom-right of circle */}
+            <circle
+                cx={x + R - 5} cy={y + R - 5} r={8}
+                fill="var(--c-lift)"
+                stroke="var(--c-border-sub)"
+                strokeWidth="1"
+            />
             <text
-                x={x} y={y - 4}
+                x={x + R - 5} y={y + R - 1}
                 textAnchor="middle"
-                fill="white"
-                fontSize="8"
-                fontWeight="bold"
+                fill="var(--c-dim)"
+                fontSize="7"
+                fontFamily={FONT_MONO}
             >
-                {name.length > 8 ? name.slice(0, 8) + '…' : name}
+                {rank}
             </text>
 
-            {/* Rank */}
+            {/* Song name — below circle */}
             <text
-                x={x} y={y + 8}
+                x={x} y={y + R + 14}
                 textAnchor="middle"
-                fill="#9ca3af"
-                fontSize="8"
+                fill={isRoot && color ? color : 'oklch(68% 0.010 78)'}
+                fontSize="9"
+                fontWeight={isRoot ? 600 : 400}
+                fontFamily={FONT_SANS}
             >
-                r={rank}
+                {name.length > 12 ? name.slice(0, 12) + '…' : name}
             </text>
 
-            {/* Render children recursively */}
+            {/* Recurse children */}
             {(children[name] || []).map((child, i) => {
-                const childX = x + (i - (childCount - 1) / 2) * childSpacing
-                const childY = y + 80
+                const cx = x + (i - (childCount - 1) / 2) * childSpacing
                 return (
                     <TreeNode
                         key={child}
                         name={child}
                         children={children}
-                        x={childX}
+                        x={cx}
                         y={childY}
                         rank={0}
                         isRoot={false}
+                        color={null}
+                        coverMap={coverMap}
+                        colorMap={colorMap}
                     />
                 )
             })}
@@ -79,47 +137,65 @@ function TreeNode({ name, children, x, y, rank, isRoot }) {
     )
 }
 
-export default function DisjointSetsTree({ ds }) {
-    if (!ds || Object.keys(ds.parent).length === 0) {
+export default function DisjointSetsTree({ ds, getColor, isEmpty, songs = [] }) {
+    // Empty state
+    if (isEmpty || !ds || Object.keys(ds.parent).length === 0) {
         return (
-            <div className="flex items-center justify-center h-full">
-                <p className="text-gray-600 text-sm">Insert songs to see the forest</p>
-            </div>
+            <svg
+                viewBox="0 0 600 300"
+                style={{ width: '100%', height: '100%', display: 'block' }}
+                preserveAspectRatio="xMidYMid meet"
+            >
+                <circle cx={300} cy={140} r={52}
+                    fill="none"
+                    stroke="var(--c-border-sub)"
+                    strokeWidth="1"
+                    strokeDasharray="5 5"
+                />
+                <text x={300} y={137} textAnchor="middle"
+                    fill="var(--c-dim)" fontSize="12"
+                    fontFamily={FONT_SANS} fontWeight="500">
+                    Add songs
+                </text>
+                <text x={300} y={155} textAnchor="middle"
+                    fill="var(--c-dim)" fontSize="11"
+                    fontFamily={FONT_SANS}>
+                    to see the forest
+                </text>
+            </svg>
         )
     }
 
     const children = buildChildren(ds)
+    const roots    = Object.keys(ds.parent).filter(n => ds.parent[n] === n)
 
-    // Find all roots
-    const roots = Object.keys(ds.parent).filter(
-        node => ds.parent[node] === node
-    )
+    const treeSpacing = 220
+    const startX      = 130
+    const svgWidth    = Math.max(roots.length * treeSpacing + startX, 500)
 
-    const treeSpacing = 200
-    const startX = 120
+    // Build lookup maps once at this level
+    const coverMap = {}
+    for (const s of songs) coverMap[s.name] = s.cover || null
 
     return (
-        <div className="flex flex-col gap-2">
-            <p className="text-gray-400 text-xs">
-                Forest of Disjoint Sets — green = root, r = rank
-            </p>
-            <svg
-                viewBox={`0 0 ${Math.max(roots.length * treeSpacing, 400)} 300`}
-                preserveAspectRatio="xMidYMid meet"
-                className="w-full h-auto"
-            >
-                {roots.map((root, i) => (
-                    <TreeNode
-                        key={root}
-                        name={root}
-                        children={children}
-                        x={startX + i * treeSpacing}
-                        y={50}
-                        rank={ds.rank[root]}
-                        isRoot={true}
-                    />
-                ))}
-            </svg>
-        </div>
+        <svg
+            viewBox={`0 0 ${svgWidth} 460`}
+            preserveAspectRatio="xMidYMin meet"
+            style={{ width: '100%', height: '100%', display: 'block' }}
+        >
+            {roots.map((root, i) => (
+                <TreeNode
+                    key={root}
+                    name={root}
+                    children={children}
+                    x={startX + i * treeSpacing}
+                    y={62}
+                    rank={ds.rank[root]}
+                    isRoot={true}
+                    color={getColor ? getColor(root) : null}
+                    coverMap={coverMap}
+                />
+            ))}
+        </svg>
     )
 }
