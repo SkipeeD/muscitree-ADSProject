@@ -1,27 +1,32 @@
 // Each node in the BST
-export function createNode(name, bpm, id) {
+export function createNode(name, bpm, id, cover = null) {
     return {
         name,
         bpm,
+        cover,
         left: null,
         right: null,
-        id: id ?? (Date.now() + Math.random()), // stable id passed in from song data
+        id: id ?? (Date.now() + Math.random()),
     }
 }
 
 // Insert a new song into the BST
-// Pass song.id so node IDs are stable across tree rebuilds
-export function insert(root, name, bpm, id) {
-    if (root === null) return createNode(name, bpm, id)
-    if (bpm < root.bpm) {
-        root.left = insert(root.left, name, bpm, id)
-    } else if (bpm > root.bpm) {
-        root.right = insert(root.right, name, bpm, id)
-    }
-    return root
+export function insert(root, name, bpm, id, cover = null) {
+    if (root === null) return createNode(name, bpm, id, cover)
+    if (bpm < root.bpm) return { ...root, left: insert(root.left, name, bpm, id, cover) }
+    if (bpm > root.bpm) return { ...root, right: insert(root.right, name, bpm, id, cover) }
+    return root // duplicate BPM
 }
 
-// Search by BPM — returns array of node ids on the path
+// Find a node by BPM
+export function findNode(root, bpm) {
+    if (root === null) return null
+    if (bpm === root.bpm) return root
+    if (bpm < root.bpm) return findNode(root.left, bpm)
+    return findNode(root.right, bpm)
+}
+
+// Search by BPM
 export function search(root, bpm, path = []) {
     if (root === null) return path
     path.push(root.id)
@@ -30,7 +35,7 @@ export function search(root, bpm, path = []) {
     return search(root.right, bpm, path)
 }
 
-// In-order traversal — left → root → right (lowest BPM to highest)
+// In-order traversal
 export function inOrder(root, result = []) {
     if (root === null) return result
     inOrder(root.left, result)
@@ -39,7 +44,7 @@ export function inOrder(root, result = []) {
     return result
 }
 
-// Reverse in-order traversal — right → root → left (highest BPM to lowest)
+// Reverse in-order traversal
 export function reverseInOrder(root, result = []) {
     if (root === null) return result
     reverseInOrder(root.right, result)
@@ -48,7 +53,7 @@ export function reverseInOrder(root, result = []) {
     return result
 }
 
-// Post-order traversal — left → right → root
+// Post-order traversal
 export function postOrder(root, result = []) {
     if (root === null) return result
     postOrder(root.left, result)
@@ -57,13 +62,8 @@ export function postOrder(root, result = []) {
     return result
 }
 
-// Returns all metadata needed to animate a delete operation:
-// searchPath  — node ids visited while locating the target
-// targetId    — id of the node to delete (null if not found)
-// targetName  — name of the target node
-// deleteCase  — 1 = leaf, 2 = one child, 3 = two children
-// successorPath — ids visited while finding the in-order successor (case 3 only)
-// successorId / successorName / successorBpm — the successor node (case 3 only)
+
+
 export function getDeleteInfo(root, bpm) {
     const searchPath = []
     let node = root
@@ -105,18 +105,16 @@ export function getDeleteInfo(root, bpm) {
     return { searchPath, targetId, targetName, deleteCase, successorPath, successorId, successorName, successorBpm }
 }
 
-// Pure BST deletion — returns new root
-// (App state rebuilds the tree from the filtered songs array, but this
-//  is kept here as a standalone utility and for educational reference)
+// BST deletion
 export function deleteNode(root, bpm) {
     if (root === null) return null
     if (bpm < root.bpm) return { ...root, left: deleteNode(root.left, bpm) }
     if (bpm > root.bpm) return { ...root, right: deleteNode(root.right, bpm) }
     // Found — handle the three cases
-    if (!root.left) return root.right           // case 1 & 2 (no left child)
-    if (!root.right) return root.left           // case 2 (no right child)
+    if (!root.left) return root.right                    //  no left child
+    if (!root.right) return root.left                    // no right child
     // Case 3: two children — replace with in-order successor
     let succ = root.right
     while (succ.left) succ = succ.left
-    return { ...root, name: succ.name, bpm: succ.bpm, id: succ.id, right: deleteNode(root.right, succ.bpm) }
+    return { ...root, name: succ.name, bpm: succ.bpm, id: succ.id, cover: succ.cover, right: deleteNode(root.right, succ.bpm) }
 }

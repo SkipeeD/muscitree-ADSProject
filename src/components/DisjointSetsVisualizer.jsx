@@ -13,7 +13,6 @@ const SET_COLORS = [
     'oklch(62% 0.10 100)',   // lime
 ]
 
-// 'oklch(x% y z)' → 'oklch(x% y z / alpha)'
 const a = (color, alpha) => color.replace(')', ` / ${alpha})`)
 
 export default function DisjointSetsVisualizer({ songs }) {

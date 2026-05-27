@@ -11,7 +11,7 @@ function buildChildren(ds) {
     return children
 }
 
-// coverMap, colorMap, and rankMap are passed down so every level has access
+
 function TreeNode({ name, children, x, y, rank, isRoot, color, coverMap, colorMap, rankMap }) {
     const childCount   = children[name]?.length || 0
     const childSpacing = 110

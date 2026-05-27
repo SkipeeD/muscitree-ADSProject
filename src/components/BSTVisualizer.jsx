@@ -1,5 +1,4 @@
 import { memo } from 'react'
-import { insert } from '../hooks/useBST'
 import { computeLayout } from '../hooks/useTreeLayout'
 
 const R  = 34   // node radius
@@ -22,20 +21,15 @@ const CLR_SUCC_HALO   = 'oklch(60% 0.14 200 / 0.11)'
 const CLR_SUCC_TEXT   = 'oklch(70% 0.13 200)'
 
 export default memo(function BSTVisualizer({
-    songs,
+    tree,
     highlightedIds,
     lastSongName,
-    deleteTargetId       = null,
-    deleteSuccessorId    = null,
+    deleteTargetId         = null,
+    deleteSuccessorId      = null,
     deleteSuccessorPathIds = [],
-    deletePhase          = null,
+    deletePhase            = null,
 }) {
-    let root = null
-    for (const song of songs) {
-        root = insert(root, song.name, song.bpm, song.id)
-    }
-
-    const { nodes, edges } = computeLayout(root)
+    const { nodes, edges } = computeLayout(tree)
 
     // Clip edge endpoints to circle perimeter
     const clippedEdges = edges.map(edge => {
@@ -130,8 +124,7 @@ export default memo(function BSTVisualizer({
 
                 {/* Nodes */}
                 {nodes.map(node => {
-                    const songData        = songs.find(s => s.name === node.name)
-                    const cover           = songData?.cover || null
+                    const cover           = node.cover || null
                     const hl              = highlightedIds.includes(node.id)
                     const isDeleteTarget  = node.id === deleteTargetId
                     const isSuccessor     = node.id === deleteSuccessorId

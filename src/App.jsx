@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { insert, search, inOrder, reverseInOrder, postOrder, getDeleteInfo } from './hooks/useBST'
+import { insert, search, inOrder, reverseInOrder, postOrder, getDeleteInfo, deleteNode, findNode } from './hooks/useBST'
 import BSTVisualizer from './components/BSTVisualizer'
 import DisjointSetsVisualizer from './components/DisjointSetsVisualizer'
 
@@ -20,7 +20,7 @@ const DELETE_CASE_LABEL = { 1: 'LEAF', 2: 'SINGLE CHILD', 3: 'TWO CHILDREN' }
 
 function App() {
     const [activeTab, setActiveTab]                     = useState('bst')
-    const [songs, setSongs]                             = useState([])
+    const [tree, setTree]                               = useState(null)
     const [highlightedIds, setHighlightedIds]           = useState([])
     const [traversalResult, setTraversalResult]         = useState([])
     const [isInserting, setIsInserting]                 = useState(false)
@@ -45,29 +45,22 @@ function App() {
 
     // Cancellation token for animated operations
     const searchRunId  = useRef(0)
-    // Keep songs in a ref so async handlers see latest value without being in deps
-    const songsRef     = useRef(songs)
-    useEffect(() => { songsRef.current = songs }, [songs])
+    // Keep tree in a ref so async handlers always see the latest value without being in deps
+    const treeRef = useRef(tree)
+    useEffect(() => { treeRef.current = tree }, [tree])
 
-    const buildTree = useCallback((songList) => {
-        let root = null
-        for (const song of songList) root = insert(root, song.name, song.bpm, song.id)
-        return root
-    }, [])
-
-    // Auto-run traversal whenever songs or traversal mode changes
+    // Auto-run traversal whenever tree or traversal mode changes
     useEffect(() => {
-        if (!TRAVERSAL_MODES.includes(bstMode) || songs.length === 0) return
-        const root = buildTree(songs)
+        if (!TRAVERSAL_MODES.includes(bstMode) || !tree) return
         const fn = bstMode === 'inorder'      ? inOrder
                  : bstMode === 'reverseorder' ? reverseInOrder
                  : postOrder
-        const result = fn(root)
+        const result = fn(tree)
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setTraversalResult(result)
         setHighlightedIds(result.map(n => n.id))
         searchRunId.current++
-    }, [songs, bstMode, buildTree])
+    }, [tree, bstMode])
 
     const handleInsert = useCallback(async () => {
         const name = nameRef.current?.value.trim()
@@ -76,7 +69,7 @@ function App() {
 
         // Block duplicate BPMs — BST silently drops them, so surface it explicitly
         const bpmInt = parseInt(bpm)
-        if (songsRef.current.some(s => s.bpm === bpmInt)) {
+        if (findNode(treeRef.current, bpmInt)) {
             setInsertError(`BPM ${bpmInt} already in tree`)
             bpmRef.current?.select()
             return
@@ -99,10 +92,10 @@ function App() {
             const data  = await res.json()
             const cover = data.results[0]?.artworkUrl100 || null
             setLastSongName(name)
-            setSongs(prev => [...prev, { id, name, bpm: parseInt(bpm), cover }])
+            setTree(prev => insert(prev, name, bpmInt, id, cover))
         } catch {
             setLastSongName(name)
-            setSongs(prev => [...prev, { id, name, bpm: parseInt(bpm), cover: null }])
+            setTree(prev => insert(prev, name, bpmInt, id, null))
         } finally {
             if (nameRef.current)  nameRef.current.value  = ''
             if (bpmRef.current)   bpmRef.current.value   = ''
@@ -116,7 +109,7 @@ function App() {
         const bpmVal = searchBpmRef.current?.value
         if (!bpmVal) return
         const runId = ++searchRunId.current
-        const root  = buildTree(songsRef.current)
+        const root  = treeRef.current
         const path  = search(root, parseInt(bpmVal))
         setHighlightedIds([])
         setTraversalResult([])
@@ -131,7 +124,7 @@ function App() {
         if (searchRunId.current !== runId) return
         setHighlightedIds(path.length > 0 ? [path[path.length - 1]] : [])
         // Found node stays lit — user clears manually or starts a new operation
-    }, [buildTree])
+    }, [])
 
     // Animated delete with 3-case visualization
     const handleDelete = useCallback(async () => {
@@ -139,7 +132,7 @@ function App() {
         if (!bpmVal) return
 
         const runId = ++searchRunId.current
-        const root  = buildTree(songsRef.current)
+        const root  = treeRef.current
         const info  = getDeleteInfo(root, bpmVal)
 
         // Reset all state
@@ -214,11 +207,7 @@ function App() {
         await new Promise(r => setTimeout(r, 380))
         if (searchRunId.current !== runId) return
 
-        setSongs(prev => {
-            const idx = prev.findIndex(s => s.bpm === bpmVal)
-            if (idx === -1) return prev
-            return [...prev.slice(0, idx), ...prev.slice(idx + 1)]
-        })
+        setTree(prev => deleteNode(prev, bpmVal))
 
         // Clean up all delete state
         setDeleteTargetId(null)
@@ -228,7 +217,7 @@ function App() {
         setDeleteStripInfo(null)
         setHighlightedIds([])
         if (deleteBpmRef.current) deleteBpmRef.current.value = ''
-    }, [buildTree])
+    }, [])
 
     const handleModeChange = useCallback((mode) => {
         setBstMode(mode)
@@ -255,6 +244,9 @@ function App() {
 
     const hasActiveState = highlightedIds.length > 0 || traversalResult.length > 0
         || deleteTargetId !== null || deleteStripInfo !== null
+
+    // Derive a flat songs list from the tree for the DisjointSets tab
+    const songs = inOrder(tree)
 
     const INPUT_STYLE = {
         padding: '5px 10px',
@@ -628,7 +620,7 @@ function App() {
             <main style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
                 <div style={{ position: 'absolute', inset: 0, display: activeTab === 'bst' ? 'block' : 'none' }}>
                     <BSTVisualizer
-                        songs={songs}
+                        tree={tree}
                         highlightedIds={highlightedIds}
                         lastSongName={lastSongName}
                         deleteTargetId={deleteTargetId}
