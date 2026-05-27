@@ -1,36 +1,49 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { insert, search, inOrder, preOrder, postOrder } from './hooks/useBST'
+import { insert, search, inOrder, reverseInOrder, postOrder, getDeleteInfo } from './hooks/useBST'
 import BSTVisualizer from './components/BSTVisualizer'
 import DisjointSetsVisualizer from './components/DisjointSetsVisualizer'
 
-const TRAVERSAL_MODES = ['inorder', 'preorder', 'postorder']
+const TRAVERSAL_MODES = ['inorder', 'reverseorder', 'postorder']
 const MODE_LABELS = {
-    search:    'Search',
-    inorder:   'In-Order',
-    preorder:  'Pre-Order',
-    postorder: 'Post-Order',
+    search:       'Search',
+    inorder:      'In-Order',
+    reverseorder: 'Reverse In-Order',
+    postorder:    'Post-Order',
+    delete:       'Delete',
 }
 const STRIP_LABELS = {
-    inorder:   'IN-ORDER',
-    preorder:  'PRE-ORDER',
-    postorder: 'POST-ORDER',
+    inorder:      'IN-ORDER',
+    reverseorder: 'REVERSE IN-ORDER',
+    postorder:    'POST-ORDER',
 }
+const DELETE_CASE_LABEL = { 1: 'LEAF', 2: 'SINGLE CHILD', 3: 'TWO CHILDREN' }
 
 function App() {
-    const [activeTab, setActiveTab]               = useState('bst')
-    const [songs, setSongs]                       = useState([])
-    const [highlightedIds, setHighlightedIds]     = useState([])
-    const [traversalResult, setTraversalResult]   = useState([])
-    const [isInserting, setIsInserting]           = useState(false)
-    const [bstMode, setBstMode]                   = useState('search')
-    const [lastSongName, setLastSongName]         = useState(null)
+    const [activeTab, setActiveTab]                     = useState('bst')
+    const [songs, setSongs]                             = useState([])
+    const [highlightedIds, setHighlightedIds]           = useState([])
+    const [traversalResult, setTraversalResult]         = useState([])
+    const [isInserting, setIsInserting]                 = useState(false)
+    const [bstMode, setBstMode]                         = useState('search')
+    const [lastSongName, setLastSongName]               = useState(null)
+
+    // Insert error
+    const [insertError, setInsertError]                 = useState(null)
+
+    // Delete animation state
+    const [deleteTargetId, setDeleteTargetId]           = useState(null)
+    const [deleteSuccessorId, setDeleteSuccessorId]     = useState(null)
+    const [deleteSuccessorPathIds, setDeleteSuccessorPathIds] = useState([])
+    const [deletePhase, setDeletePhase]                 = useState(null)
+    const [deleteStripInfo, setDeleteStripInfo]         = useState(null)
 
     // Uncontrolled inputs — zero re-renders while typing
     const nameRef      = useRef(null)
     const bpmRef       = useRef(null)
     const searchBpmRef = useRef(null)
+    const deleteBpmRef = useRef(null)
 
-    // Cancellation token for animated search
+    // Cancellation token for animated operations
     const searchRunId  = useRef(0)
     // Keep songs in a ref so async handlers see latest value without being in deps
     const songsRef     = useRef(songs)
@@ -46,10 +59,11 @@ function App() {
     useEffect(() => {
         if (!TRAVERSAL_MODES.includes(bstMode) || songs.length === 0) return
         const root = buildTree(songs)
-        const fn = bstMode === 'inorder'   ? inOrder
-                 : bstMode === 'preorder'  ? preOrder
+        const fn = bstMode === 'inorder'      ? inOrder
+                 : bstMode === 'reverseorder' ? reverseInOrder
                  : postOrder
         const result = fn(root)
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setTraversalResult(result)
         setHighlightedIds(result.map(n => n.id))
         searchRunId.current++
@@ -59,14 +73,26 @@ function App() {
         const name = nameRef.current?.value.trim()
         const bpm  = bpmRef.current?.value
         if (!name || !bpm || isInserting) return
+
+        // Block duplicate BPMs — BST silently drops them, so surface it explicitly
+        const bpmInt = parseInt(bpm)
+        if (songsRef.current.some(s => s.bpm === bpmInt)) {
+            setInsertError(`BPM ${bpmInt} already in tree`)
+            bpmRef.current?.select()
+            return
+        }
+
+        setInsertError(null)
         setIsInserting(true)
-        // Stable ID assigned once here — same id is always used when the tree is rebuilt
         const id = Date.now() + Math.random()
-        // Cancel any in-progress search animation and wipe stale highlights.
-        // Traversal modes re-populate via useEffect immediately after songs updates.
         searchRunId.current++
         setHighlightedIds([])
         setTraversalResult([])
+        setDeleteTargetId(null)
+        setDeleteSuccessorId(null)
+        setDeleteSuccessorPathIds([])
+        setDeletePhase(null)
+        setDeleteStripInfo(null)
         try {
             const query = encodeURIComponent(name)
             const res   = await fetch(`https://itunes.apple.com/search?term=${query}&entity=song&limit=1`)
@@ -82,7 +108,6 @@ function App() {
             if (bpmRef.current)   bpmRef.current.value   = ''
             setIsInserting(false)
         }
-        // Expire the entry-animation marker after it has had time to play (480ms + buffer)
         setTimeout(() => setLastSongName(prev => prev === name ? null : prev), 700)
     }, [isInserting])
 
@@ -96,17 +121,113 @@ function App() {
         setHighlightedIds([])
         setTraversalResult([])
 
-        // Step through path nodes one by one — 600ms gives the 320ms transition room to land
         for (let i = 1; i <= path.length; i++) {
             await new Promise(resolve => setTimeout(resolve, 600))
             if (searchRunId.current !== runId) return
             setHighlightedIds(path.slice(0, i))
         }
 
-        // Pause so the last node's highlight settles, then collapse to just the found node
         await new Promise(resolve => setTimeout(resolve, 500))
         if (searchRunId.current !== runId) return
         setHighlightedIds(path.length > 0 ? [path[path.length - 1]] : [])
+        // Found node stays lit — user clears manually or starts a new operation
+    }, [buildTree])
+
+    // Animated delete with 3-case visualization
+    const handleDelete = useCallback(async () => {
+        const bpmVal = parseInt(deleteBpmRef.current?.value)
+        if (!bpmVal) return
+
+        const runId = ++searchRunId.current
+        const root  = buildTree(songsRef.current)
+        const info  = getDeleteInfo(root, bpmVal)
+
+        // Reset all state
+        setHighlightedIds([])
+        setTraversalResult([])
+        setDeleteTargetId(null)
+        setDeleteSuccessorId(null)
+        setDeleteSuccessorPathIds([])
+        setDeletePhase(null)
+        setDeleteStripInfo(null)
+
+        if (!info.targetId) {
+            // Not found — animate the failed search path and stop
+            setDeletePhase('searching')
+            for (let i = 1; i <= info.searchPath.length; i++) {
+                await new Promise(r => setTimeout(r, 420))
+                if (searchRunId.current !== runId) return
+                setHighlightedIds(info.searchPath.slice(0, i))
+            }
+            await new Promise(r => setTimeout(r, 900))
+            if (searchRunId.current !== runId) return
+            setHighlightedIds([])
+            setDeletePhase(null)
+            return
+        }
+
+        // ── Phase 1: walk search path down to (but not including) the target ──
+        setDeletePhase('searching')
+        for (let i = 1; i < info.searchPath.length; i++) {
+            await new Promise(r => setTimeout(r, 420))
+            if (searchRunId.current !== runId) return
+            setHighlightedIds(info.searchPath.slice(0, i))
+        }
+
+        // ── Phase 2: land on target — highlight red, show strip ──
+        await new Promise(r => setTimeout(r, 420))
+        if (searchRunId.current !== runId) return
+        setHighlightedIds([])
+        setDeleteTargetId(info.targetId)
+        setDeletePhase('found')
+        setDeleteStripInfo({
+            deleteCase:    info.deleteCase,
+            targetName:    info.targetName,
+            targetBpm:     bpmVal,
+            successorName: info.successorName,
+            successorBpm:  info.successorBpm,
+        })
+
+        // ── Phase 3 (case 3 only): walk to in-order successor ──
+        if (info.deleteCase === 3) {
+            await new Promise(r => setTimeout(r, 750))
+            if (searchRunId.current !== runId) return
+            setDeletePhase('successor')
+            for (let i = 1; i <= info.successorPath.length; i++) {
+                await new Promise(r => setTimeout(r, 380))
+                if (searchRunId.current !== runId) return
+                setDeleteSuccessorPathIds(info.successorPath.slice(0, i))
+            }
+            // Confirm successor — light it up in teal
+            await new Promise(r => setTimeout(r, 300))
+            if (searchRunId.current !== runId) return
+            setDeleteSuccessorId(info.successorId)
+            await new Promise(r => setTimeout(r, 700))
+            if (searchRunId.current !== runId) return
+        } else {
+            await new Promise(r => setTimeout(r, 900))
+            if (searchRunId.current !== runId) return
+        }
+
+        // ── Phase 4: fade out target, then actually remove ──
+        setDeletePhase('removing')
+        await new Promise(r => setTimeout(r, 380))
+        if (searchRunId.current !== runId) return
+
+        setSongs(prev => {
+            const idx = prev.findIndex(s => s.bpm === bpmVal)
+            if (idx === -1) return prev
+            return [...prev.slice(0, idx), ...prev.slice(idx + 1)]
+        })
+
+        // Clean up all delete state
+        setDeleteTargetId(null)
+        setDeleteSuccessorId(null)
+        setDeleteSuccessorPathIds([])
+        setDeletePhase(null)
+        setDeleteStripInfo(null)
+        setHighlightedIds([])
+        if (deleteBpmRef.current) deleteBpmRef.current.value = ''
     }, [buildTree])
 
     const handleModeChange = useCallback((mode) => {
@@ -114,15 +235,26 @@ function App() {
         searchRunId.current++
         setHighlightedIds([])
         setTraversalResult([])
+        setDeleteTargetId(null)
+        setDeleteSuccessorId(null)
+        setDeleteSuccessorPathIds([])
+        setDeletePhase(null)
+        setDeleteStripInfo(null)
     }, [])
 
     const clearState = useCallback(() => {
         searchRunId.current++
         setHighlightedIds([])
         setTraversalResult([])
+        setDeleteTargetId(null)
+        setDeleteSuccessorId(null)
+        setDeleteSuccessorPathIds([])
+        setDeletePhase(null)
+        setDeleteStripInfo(null)
     }, [])
 
     const hasActiveState = highlightedIds.length > 0 || traversalResult.length > 0
+        || deleteTargetId !== null || deleteStripInfo !== null
 
     const INPUT_STYLE = {
         padding: '5px 10px',
@@ -226,9 +358,18 @@ function App() {
                             ref={bpmRef}
                             type="number"
                             placeholder="BPM"
-                            onKeyDown={e => e.key === 'Enter' && handleInsert()}
+                            onKeyDown={e => {
+                                setInsertError(null)
+                                if (e.key === 'Enter') handleInsert()
+                            }}
+                            onChange={() => setInsertError(null)}
                             className="mono"
-                            style={{ ...INPUT_STYLE, width: '70px' }}
+                            style={{
+                                ...INPUT_STYLE,
+                                width: '70px',
+                                borderColor: insertError ? 'oklch(52% 0.16 15)' : undefined,
+                                color: insertError ? 'oklch(68% 0.16 15)' : undefined,
+                            }}
                         />
                         <button
                             onClick={handleInsert}
@@ -244,6 +385,16 @@ function App() {
                         >
                             {isInserting ? '…' : 'Insert'}
                         </button>
+                        {insertError && (
+                            <span className="mono" style={{
+                                fontSize: '10px',
+                                color: 'oklch(58% 0.16 15)',
+                                whiteSpace: 'nowrap',
+                                flexShrink: 0,
+                            }}>
+                                {insertError}
+                            </span>
+                        )}
                     </div>
 
                     {DIVIDER}
@@ -256,28 +407,36 @@ function App() {
                         overflow: 'hidden',
                         flexShrink: 0,
                     }}>
-                        {Object.entries(MODE_LABELS).map(([id, label]) => (
-                            <button
-                                key={id}
-                                onClick={() => handleModeChange(id)}
-                                style={{
-                                    padding: '5px 11px',
-                                    fontSize: '11px',
-                                    fontWeight: 500,
-                                    border: 'none',
-                                    backgroundColor: bstMode === id ? 'var(--c-lift)' : 'transparent',
-                                    color: bstMode === id ? 'var(--c-text)' : 'var(--c-dim)',
-                                    cursor: 'pointer',
-                                    fontFamily: 'inherit',
-                                    flexShrink: 0,
-                                }}
-                            >
-                                {label}
-                            </button>
-                        ))}
+                        {Object.entries(MODE_LABELS).map(([id, label]) => {
+                            const isActive   = bstMode === id
+                            const isDelete   = id === 'delete'
+                            return (
+                                <button
+                                    key={id}
+                                    onClick={() => handleModeChange(id)}
+                                    style={{
+                                        padding: '5px 11px',
+                                        fontSize: '11px',
+                                        fontWeight: 500,
+                                        border: 'none',
+                                        backgroundColor: isActive
+                                            ? isDelete ? 'oklch(22% 0.05 15)' : 'var(--c-lift)'
+                                            : 'transparent',
+                                        color: isActive
+                                            ? isDelete ? 'oklch(72% 0.16 15)' : 'var(--c-text)'
+                                            : isDelete ? 'oklch(52% 0.10 15)' : 'var(--c-dim)',
+                                        cursor: 'pointer',
+                                        fontFamily: 'inherit',
+                                        flexShrink: 0,
+                                    }}
+                                >
+                                    {label}
+                                </button>
+                            )
+                        })}
                     </div>
 
-                    {/* BPM input — Search only */}
+                    {/* BPM input — Search mode */}
                     {bstMode === 'search' && (
                         <input
                             ref={searchBpmRef}
@@ -288,11 +447,35 @@ function App() {
                             style={{ ...INPUT_STYLE, width: '70px', flexShrink: 0 }}
                         />
                     )}
-
-                    {/* Run (Search only — traversals auto-run) */}
                     {bstMode === 'search' && (
                         <button onClick={handleSearch} style={{ ...BTN_BASE, flexShrink: 0 }}>
                             Run
+                        </button>
+                    )}
+
+                    {/* BPM input + Delete button — Delete mode */}
+                    {bstMode === 'delete' && (
+                        <input
+                            ref={deleteBpmRef}
+                            type="number"
+                            placeholder="BPM"
+                            onKeyDown={e => e.key === 'Enter' && handleDelete()}
+                            className="mono"
+                            style={{ ...INPUT_STYLE, width: '70px', flexShrink: 0 }}
+                        />
+                    )}
+                    {bstMode === 'delete' && (
+                        <button
+                            onClick={handleDelete}
+                            style={{
+                                ...BTN_BASE,
+                                flexShrink: 0,
+                                backgroundColor: 'oklch(22% 0.05 15)',
+                                color: 'oklch(72% 0.16 15)',
+                                border: '1px solid oklch(36% 0.08 15)',
+                            }}
+                        >
+                            Delete
                         </button>
                     )}
 
@@ -365,17 +548,98 @@ function App() {
                 </div>
             )}
 
+            {/* ── Delete Info Strip ─────────────────────────────── */}
+            {deleteStripInfo && activeTab === 'bst' && (
+                <div
+                    className="strip-enter"
+                    style={{
+                        flexShrink: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        padding: '7px 24px',
+                        backgroundColor: 'var(--c-panel)',
+                        borderBottom: '1px solid var(--c-border-sub)',
+                        overflowX: 'auto',
+                    }}
+                >
+                    {/* Case label */}
+                    <span className="mono" style={{
+                        fontSize: '10px',
+                        fontWeight: 500,
+                        color: 'oklch(60% 0.18 15)',
+                        letterSpacing: '0.06em',
+                        flexShrink: 0,
+                    }}>
+                        DELETE · {DELETE_CASE_LABEL[deleteStripInfo.deleteCase]}
+                    </span>
+
+                    <span style={{ color: 'var(--c-border)', fontSize: '10px', flexShrink: 0 }}>·</span>
+
+                    {/* Target node chip */}
+                    <span className="mono" style={{
+                        fontSize: '11px',
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        backgroundColor: 'oklch(19% 0.05 15 / 0.5)',
+                        color: 'oklch(72% 0.16 15)',
+                        border: '1px solid oklch(38% 0.09 15)',
+                        whiteSpace: 'nowrap',
+                        flexShrink: 0,
+                    }}>
+                        {deleteStripInfo.targetName} · {deleteStripInfo.targetBpm}
+                    </span>
+
+                    {/* Case description */}
+                    {deleteStripInfo.deleteCase === 1 && (
+                        <span style={{ fontSize: '11px', color: 'var(--c-muted)', flexShrink: 0 }}>
+                            leaf node — remove directly
+                        </span>
+                    )}
+                    {deleteStripInfo.deleteCase === 2 && (
+                        <span style={{ fontSize: '11px', color: 'var(--c-muted)', flexShrink: 0 }}>
+                            one child — splice out, promote child
+                        </span>
+                    )}
+                    {deleteStripInfo.deleteCase === 3 && (
+                        <>
+                            <span style={{ fontSize: '11px', color: 'var(--c-muted)', flexShrink: 0 }}>
+                                two children — in-order successor:
+                            </span>
+                            <span className="mono" style={{
+                                fontSize: '11px',
+                                padding: '2px 8px',
+                                borderRadius: '4px',
+                                backgroundColor: 'oklch(19% 0.04 200 / 0.5)',
+                                color: 'oklch(70% 0.13 200)',
+                                border: '1px solid oklch(38% 0.10 200)',
+                                whiteSpace: 'nowrap',
+                                flexShrink: 0,
+                            }}>
+                                {deleteStripInfo.successorName} · {deleteStripInfo.successorBpm}
+                            </span>
+                        </>
+                    )}
+                </div>
+            )}
+
             {/* ── Main Canvas ───────────────────────────────────── */}
-            <main style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-                {activeTab === 'bst' ? (
+            {/* Both tabs stay mounted so Disjoint Sets doesn't lose merge state on tab switch */}
+            <main style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+                <div style={{ position: 'absolute', inset: 0, display: activeTab === 'bst' ? 'block' : 'none' }}>
                     <BSTVisualizer
                         songs={songs}
                         highlightedIds={highlightedIds}
                         lastSongName={lastSongName}
+                        deleteTargetId={deleteTargetId}
+                        deleteSuccessorId={deleteSuccessorId}
+                        deleteSuccessorPathIds={deleteSuccessorPathIds}
+                        deletePhase={deletePhase}
                     />
-                ) : (
+                </div>
+                <div style={{ position: 'absolute', inset: 0, display: activeTab === 'djs' ? 'block' : 'none' }}>
                     <DisjointSetsVisualizer songs={songs} />
-                )}
+                </div>
             </main>
 
         </div>

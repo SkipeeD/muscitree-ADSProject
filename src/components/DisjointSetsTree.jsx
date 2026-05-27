@@ -11,8 +11,8 @@ function buildChildren(ds) {
     return children
 }
 
-// coverMap and colorMap are passed down so every level has access
-function TreeNode({ name, children, x, y, rank, isRoot, color, coverMap, colorMap }) {
+// coverMap, colorMap, and rankMap are passed down so every level has access
+function TreeNode({ name, children, x, y, rank, isRoot, color, coverMap, colorMap, rankMap }) {
     const childCount   = children[name]?.length || 0
     const childSpacing = 110
     const childY       = y + 110
@@ -125,11 +125,12 @@ function TreeNode({ name, children, x, y, rank, isRoot, color, coverMap, colorMa
                         children={children}
                         x={cx}
                         y={childY}
-                        rank={0}
+                        rank={rankMap?.[child] ?? 0}
                         isRoot={false}
                         color={null}
                         coverMap={coverMap}
                         colorMap={colorMap}
+                        rankMap={rankMap}
                     />
                 )
             })}
@@ -169,13 +170,18 @@ export default function DisjointSetsTree({ ds, getColor, isEmpty, songs = [] }) 
     const children = buildChildren(ds)
     const roots    = Object.keys(ds.parent).filter(n => ds.parent[n] === n)
 
-    const treeSpacing = 220
-    const startX      = 130
-    const svgWidth    = Math.max(roots.length * treeSpacing + startX, 500)
+    // Center trees within the viewBox so xMidYMin places them correctly
+    // in the right panel regardless of how many trees there are
+    const treeSpacing  = 220
+    const contentWidth = Math.max((roots.length - 1) * treeSpacing, 0)
+    const sidePad      = 90
+    const svgWidth     = Math.max(contentWidth + sidePad * 2, 500)
+    const startX       = Math.round((svgWidth - contentWidth) / 2)
 
-    // Build lookup maps once at this level
+    // Build lookup maps once at this level and pass them all the way down
     const coverMap = {}
     for (const s of songs) coverMap[s.name] = s.cover || null
+    const rankMap = ds.rank  // { songName: rank } — needed at every depth
 
     return (
         <svg
@@ -194,6 +200,7 @@ export default function DisjointSetsTree({ ds, getColor, isEmpty, songs = [] }) 
                     isRoot={true}
                     color={getColor ? getColor(root) : null}
                     coverMap={coverMap}
+                    rankMap={rankMap}
                 />
             ))}
         </svg>

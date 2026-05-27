@@ -9,7 +9,27 @@ const BY = 33   // BPM label Y below node bottom
 const FONT_SANS = "'Geist', system-ui, sans-serif"
 const FONT_MONO = "'JetBrains Mono', 'SF Mono', ui-monospace, monospace"
 
-export default memo(function BSTVisualizer({ songs, highlightedIds, lastSongName }) {
+// Delete target — red/rose
+const CLR_DEL_FILL    = 'oklch(19% 0.05 15)'
+const CLR_DEL_STROKE  = 'oklch(60% 0.18 15)'
+const CLR_DEL_HALO    = 'oklch(60% 0.18 15 / 0.11)'
+const CLR_DEL_TEXT    = 'oklch(72% 0.16 15)'
+
+// In-order successor — teal
+const CLR_SUCC_FILL   = 'oklch(19% 0.04 200)'
+const CLR_SUCC_STROKE = 'oklch(60% 0.14 200)'
+const CLR_SUCC_HALO   = 'oklch(60% 0.14 200 / 0.11)'
+const CLR_SUCC_TEXT   = 'oklch(70% 0.13 200)'
+
+export default memo(function BSTVisualizer({
+    songs,
+    highlightedIds,
+    lastSongName,
+    deleteTargetId       = null,
+    deleteSuccessorId    = null,
+    deleteSuccessorPathIds = [],
+    deletePhase          = null,
+}) {
     let root = null
     for (const song of songs) {
         root = insert(root, song.name, song.bpm, song.id)
@@ -80,38 +100,104 @@ export default memo(function BSTVisualizer({ songs, highlightedIds, lastSongName
                     </g>
                 )}
 
-                {/* Edges */}
-                {clippedEdges.map(edge => (
-                    <line
-                        key={edge.id}
-                        x1={edge.x1} y1={edge.y1}
-                        x2={edge.x2} y2={edge.y2}
-                        stroke="var(--c-border)"
-                        strokeWidth="1.5"
-                    />
-                ))}
+                {/* Edges — colored by role */}
+                {clippedEdges.map(edge => {
+                    // An edge is on the search/traversal path only when BOTH endpoints are highlighted.
+                    // This prevents the edge leading into the final found node from staying lit
+                    // after the path collapses to just that single node.
+                    const isSearchPath    = highlightedIds.includes(edge.id) && highlightedIds.includes(edge.parentId)
+                    const isDeleteTarget  = edge.id === deleteTargetId
+                    const isSuccessorPath = deleteSuccessorPathIds.includes(edge.id)
+
+                    const stroke = isDeleteTarget  ? CLR_DEL_STROKE
+                        : isSuccessorPath           ? CLR_SUCC_STROKE
+                        : isSearchPath              ? 'var(--c-accent)'
+                        : 'var(--c-border)'
+
+                    const strokeWidth = (isSearchPath || isDeleteTarget || isSuccessorPath) ? 2.5 : 1.5
+
+                    return (
+                        <line
+                            key={edge.id}
+                            x1={edge.x1} y1={edge.y1}
+                            x2={edge.x2} y2={edge.y2}
+                            stroke={stroke}
+                            strokeWidth={strokeWidth}
+                            style={{ transition: 'stroke 280ms ease, stroke-width 280ms ease' }}
+                        />
+                    )
+                })}
 
                 {/* Nodes */}
                 {nodes.map(node => {
-                    const songData = songs.find(s => s.name === node.name)
-                    const cover    = songData?.cover || null
-                    const hl       = highlightedIds.includes(node.id)
+                    const songData        = songs.find(s => s.name === node.name)
+                    const cover           = songData?.cover || null
+                    const hl              = highlightedIds.includes(node.id)
+                    const isDeleteTarget  = node.id === deleteTargetId
+                    const isSuccessor     = node.id === deleteSuccessorId
+                    const isRemoving      = isDeleteTarget && deletePhase === 'removing'
+
                     // Key changes on lastSongName to force re-mount → re-trigger CSS animation
                     const isNew    = node.name === lastSongName
                     const groupKey = isNew ? `${node.id}-new` : node.id
+
+                    // Derive colors from role
+                    const nodeFill   = isDeleteTarget ? CLR_DEL_FILL
+                        : isSuccessor               ? CLR_SUCC_FILL
+                        : hl                        ? 'var(--c-accent-mid)'
+                        : 'var(--c-panel)'
+
+                    const nodeStroke = isDeleteTarget ? CLR_DEL_STROKE
+                        : isSuccessor               ? CLR_SUCC_STROKE
+                        : hl                        ? 'var(--c-accent)'
+                        : 'var(--c-border)'
+
+                    const nodeStrokeWidth = (isDeleteTarget || isSuccessor || hl) ? 2.5 : 1.5
+
+                    const haloFill = isDeleteTarget ? CLR_DEL_HALO
+                        : isSuccessor              ? CLR_SUCC_HALO
+                        : 'var(--c-accent-low)'
+
+                    const ringStroke = isDeleteTarget ? CLR_DEL_STROKE
+                        : isSuccessor              ? CLR_SUCC_STROKE
+                        : 'var(--c-accent)'
+
+                    const nameColor = isDeleteTarget ? CLR_DEL_TEXT
+                        : isSuccessor              ? CLR_SUCC_TEXT
+                        : hl                       ? 'var(--c-text)'
+                        : 'oklch(74% 0.010 78)'
+
+                    const bpmColor = isDeleteTarget ? CLR_DEL_TEXT
+                        : isSuccessor             ? CLR_SUCC_TEXT
+                        : hl                      ? 'var(--c-accent)'
+                        : 'oklch(58% 0.010 78)'
+
+                    const initialColor = isDeleteTarget ? CLR_DEL_STROKE
+                        : isSuccessor             ? CLR_SUCC_STROKE
+                        : hl                      ? 'var(--c-accent)'
+                        : 'var(--c-muted)'
+
+                    const haloVisible = isDeleteTarget || isSuccessor || hl
+                    const ringVisible = isDeleteTarget || isSuccessor || hl
 
                     return (
                         <g
                             key={groupKey}
                             className={isNew ? 'node-new' : undefined}
+                            style={{
+                                opacity: isRemoving ? 0 : 1,
+                                transition: isRemoving
+                                    ? 'opacity 350ms ease-out'
+                                    : 'opacity 350ms cubic-bezier(0.16,1,0.3,1)',
+                            }}
                         >
                             {/* Halo — always rendered, fades in/out */}
                             <circle
                                 cx={node.x} cy={node.y}
                                 r={R + 16}
-                                fill="var(--c-accent-low)"
+                                fill={haloFill}
                                 style={{
-                                    opacity: hl ? 1 : 0,
+                                    opacity: haloVisible ? 1 : 0,
                                     transition: 'opacity 320ms cubic-bezier(0.16,1,0.3,1)',
                                 }}
                             />
@@ -120,9 +206,9 @@ export default memo(function BSTVisualizer({ songs, highlightedIds, lastSongName
                             <circle
                                 cx={node.x} cy={node.y}
                                 r={R}
-                                fill={hl ? 'var(--c-accent-mid)' : 'var(--c-panel)'}
-                                stroke={hl ? 'var(--c-accent)' : 'var(--c-border)'}
-                                strokeWidth={hl ? 2.5 : 1.5}
+                                fill={nodeFill}
+                                stroke={nodeStroke}
+                                strokeWidth={nodeStrokeWidth}
                                 style={{ transition: 'fill 320ms cubic-bezier(0.16,1,0.3,1), stroke 320ms cubic-bezier(0.16,1,0.3,1), stroke-width 320ms cubic-bezier(0.16,1,0.3,1)' }}
                             />
 
@@ -137,7 +223,7 @@ export default memo(function BSTVisualizer({ songs, highlightedIds, lastSongName
                                     clipPath={`url(#clip-${node.id})`}
                                     preserveAspectRatio="xMidYMid slice"
                                     style={{
-                                        opacity: hl ? 0.55 : 1,
+                                        opacity: (isDeleteTarget || isSuccessor) ? 0.35 : hl ? 0.55 : 1,
                                         transition: 'opacity 320ms cubic-bezier(0.16,1,0.3,1)',
                                     }}
                                 />
@@ -148,7 +234,7 @@ export default memo(function BSTVisualizer({ songs, highlightedIds, lastSongName
                                 <text
                                     x={node.x} y={node.y + 7}
                                     textAnchor="middle"
-                                    fill={hl ? 'var(--c-accent)' : 'var(--c-muted)'}
+                                    fill={initialColor}
                                     fontSize="19"
                                     fontWeight="600"
                                     fontFamily={FONT_SANS}
@@ -158,16 +244,16 @@ export default memo(function BSTVisualizer({ songs, highlightedIds, lastSongName
                                 </text>
                             )}
 
-                            {/* Amber ring — always rendered, fades in/out */}
+                            {/* Colored ring — always rendered, fades in/out */}
                             <circle
                                 cx={node.x} cy={node.y}
                                 r={R}
                                 fill="none"
-                                stroke="var(--c-accent)"
+                                stroke={ringStroke}
                                 strokeWidth="3.5"
                                 style={{
-                                    opacity: hl ? 1 : 0,
-                                    transition: 'opacity 320ms cubic-bezier(0.16,1,0.3,1)',
+                                    opacity: ringVisible ? 1 : 0,
+                                    transition: 'opacity 320ms cubic-bezier(0.16,1,0.3,1), stroke 320ms cubic-bezier(0.16,1,0.3,1)',
                                 }}
                             />
 
@@ -175,7 +261,7 @@ export default memo(function BSTVisualizer({ songs, highlightedIds, lastSongName
                             <text
                                 x={node.x} y={node.y + R + LY}
                                 textAnchor="middle"
-                                fill={hl ? 'var(--c-text)' : 'oklch(74% 0.010 78)'}
+                                fill={nameColor}
                                 fontSize="12"
                                 fontWeight="500"
                                 fontFamily={FONT_SANS}
@@ -188,7 +274,7 @@ export default memo(function BSTVisualizer({ songs, highlightedIds, lastSongName
                             <text
                                 x={node.x} y={node.y + R + BY}
                                 textAnchor="middle"
-                                fill={hl ? 'var(--c-accent)' : 'oklch(58% 0.010 78)'}
+                                fill={bpmColor}
                                 fontSize="11"
                                 fontFamily={FONT_MONO}
                                 style={{ transition: 'fill 320ms cubic-bezier(0.16,1,0.3,1)' }}
